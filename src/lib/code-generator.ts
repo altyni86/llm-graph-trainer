@@ -264,65 +264,103 @@ ${code}
 }
 
 /**
- * Generates the forward pass code
+ * Generates the forward pass code based on the sorted nodes and edges
  */
 function generateForwardPass(
   sortedNodes: Node<LLMNodeData>[],
   edges: Edge[],
   optimizationSettings?: OptimizationSettings
 ): string {
-  let code = '';
-  const nodeOutputs: Record<string, string> = {};
+  // Create a map of node IDs to their output variable names
+  const outputVars: Record<string, string> = {};
   
-  // Initialize the first node's input as 'x'
-  if (sortedNodes.length > 0) {
-    nodeOutputs[sortedNodes[0].id] = 'x';
-  }
+  // Create a map of node IDs to their input connections
+  const inputConnections: Record<string, string[]> = {};
   
-  // Add gradient checkpointing if enabled
-  if (optimizationSettings?.gradientCheckpointing) {
-    code += `# Enable gradient checkpointing for memory efficiency
-        torch.utils.checkpoint.checkpoint_sequential(self.modules(), 2, x)
-        
-`;
-  }
-  
-  // Generate forward pass for each node
-  sortedNodes.forEach((node, index) => {
-    const inputVar = nodeOutputs[node.id] || `x_${index}`;
-    const outputVar = `x_${index + 1}`;
-    
-    // Add the forward pass line
-    if (node.data.type === 'qkvAttention' && (optimizationSettings?.flashAttention || optimizationSettings?.xformers)) {
-      // Special handling for attention with optimizations
-      if (optimizationSettings.flashAttention) {
-        code += `# Using Flash Attention for faster, memory-efficient attention
-        ${outputVar} = self.${node.id}(${inputVar}, use_flash_attn=True)
-        `;
-      } else if (optimizationSettings.xformers) {
-        code += `# Using xFormers for memory-efficient attention
-        ${outputVar} = self.${node.id}(${inputVar}, use_xformers=True)
-        `;
-      }
-    } else {
-      code += `${outputVar} = self.${node.id}(${inputVar})\n        `;
-    }
-    
-    // Update the outputs map for connected nodes
-    edges.forEach(edge => {
-      if (edge.source === node.id) {
-        nodeOutputs[edge.target] = outputVar;
-      }
-    });
+  // Initialize input connections
+  sortedNodes.forEach(node => {
+    inputConnections[node.id] = [];
   });
   
-  // Set the final output
-  if (sortedNodes.length > 0) {
-    const lastNode = sortedNodes[sortedNodes.length - 1];
-    code += `x = x_${sortedNodes.indexOf(lastNode) + 1}`;
-  }
+  // Map edges to input connections
+  edges.forEach(edge => {
+    if (inputConnections[edge.target]) {
+      inputConnections[edge.target].push(edge.source);
+    }
+  });
   
-  return code;
+  // Generate forward pass code
+  let forwardCode = '';
+  
+  sortedNodes.forEach((node, index) => {
+    const nodeId = node.id;
+    const componentName = `self.${nodeId}`;
+    
+    // Determine input variable
+    let inputVar = 'x';
+    
+    // If this node has input connections, use those instead
+    if (inputConnections[nodeId] && inputConnections[nodeId].length > 0) {
+      // If there's only one input, use it directly
+      if (inputConnections[nodeId].length === 1) {
+        const sourceId = inputConnections[nodeId][0];
+        inputVar = outputVars[sourceId] || 'x';
+      } else {
+        // If there are multiple inputs, we need to handle them based on node type
+        const inputs = inputConnections[nodeId].map(sourceId => outputVars[sourceId] || 'x');
+        
+        // Different handling based on node type
+        switch (node.data.type) {
+          case 'qkvAttention':
+            // For attention, we might need to combine inputs
+            inputVar = `torch.cat([${inputs.join(', ')}, dim=-1])`;
+            break;
+          default:
+            // Default behavior: use the first input
+            inputVar = inputs[0];
+        }
+      }
+    }
+    
+    // Generate output variable name
+    const outputVar = index === sortedNodes.length - 1 ? 'x' : `x_${nodeId}`;
+    outputVars[nodeId] = outputVar;
+    
+    // Generate the forward pass line
+    let forwardLine = '';
+    
+    switch (node.data.type) {
+      case 'embedding':
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+        break;
+      case 'positionalEncoding':
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+        break;
+      case 'qkvAttention':
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+        break;
+      case 'ffn':
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+        break;
+      case 'layerNorm':
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+        break;
+      case 'output':
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+        break;
+      default:
+        forwardLine = `${outputVar} = ${componentName}(${inputVar})`;
+    }
+    
+    forwardCode += `        ${forwardLine}\n`;
+    
+    // Add debug print if needed
+    if (optimizationSettings?.debug) {
+      forwardCode += `        print(f"Output of ${nodeId}: {${outputVar}.shape}")\n`;
+    }
+  });
+  
+  return forwardCode;
 }
 
 /**

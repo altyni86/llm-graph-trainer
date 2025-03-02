@@ -614,7 +614,8 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
     const connectionStatus = new Map<string, { 
       hasInputs: boolean, 
       hasOutputs: boolean,
-      isValid: boolean 
+      isValid: boolean,
+      connectionErrors: string[]
     }>();
     
     // Initialize all nodes as not connected
@@ -622,28 +623,71 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
       connectionStatus.set(node.id, { 
         hasInputs: false, 
         hasOutputs: false,
-        isValid: false 
+        isValid: false,
+        connectionErrors: []
       });
     });
     
+    // Define valid connection rules
+    const validConnections: Record<string, string[]> = {
+      'embedding': ['positionalEncoding', 'layerNorm', 'qkvAttention', 'ffn', 'output'],
+      'positionalEncoding': ['layerNorm', 'qkvAttention', 'ffn', 'output'],
+      'layerNorm': ['qkvAttention', 'ffn', 'output', 'layerNorm'],
+      'qkvAttention': ['layerNorm', 'ffn', 'output', 'qkvAttention'],
+      'ffn': ['layerNorm', 'qkvAttention', 'output', 'ffn'],
+      'output': [] // Output nodes shouldn't connect to anything
+    };
+    
     // Check connections
     edges.forEach(edge => {
+      // Get source and target nodes
+      const sourceNode = nodes.find(node => node.id === edge.source);
+      const targetNode = nodes.find(node => node.id === edge.target);
+      
+      if (!sourceNode || !targetNode) return;
+      
+      // Check if this connection is valid based on node types
+      const sourceType = sourceNode.data.type;
+      const targetType = targetNode.data.type;
+      
+      const isValidConnection = validConnections[sourceType]?.includes(targetType);
+      
       // Mark source node as having outputs
       const sourceStatus = connectionStatus.get(edge.source);
       if (sourceStatus) {
-        connectionStatus.set(edge.source, { 
+        const updatedStatus = { 
           ...sourceStatus, 
           hasOutputs: true 
-        });
+        };
+        
+        // Add error if connection is invalid
+        if (!isValidConnection) {
+          updatedStatus.connectionErrors.push(
+            `Invalid connection: ${sourceNode.data.label} cannot connect to ${targetNode.data.label}`
+          );
+        }
+        
+        connectionStatus.set(edge.source, updatedStatus);
       }
       
       // Mark target node as having inputs
       const targetStatus = connectionStatus.get(edge.target);
       if (targetStatus) {
-        connectionStatus.set(edge.target, { 
+        const updatedStatus = { 
           ...targetStatus, 
           hasInputs: true 
-        });
+        };
+        
+        // Add error if connection is invalid (only add to target if not already added to source)
+        if (!isValidConnection && !sourceStatus?.connectionErrors.some(err => 
+          err.includes(`Invalid connection: ${sourceNode.data.label} cannot connect to ${targetNode.data.label}`)
+        )) {
+          updatedStatus.connectionErrors.push(
+            `Invalid connection: ${sourceNode.data.label} cannot connect to ${targetNode.data.label}`
+          );
+        }
+        
+        connectionStatus.set(edge.target, updatedStatus);
       }
     });
     
@@ -658,7 +702,7 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
           // Embedding can be a starting node (no inputs required)
           connectionStatus.set(node.id, { 
             ...status, 
-            isValid: status.hasOutputs 
+            isValid: status.hasOutputs && status.connectionErrors.length === 0
           });
           break;
           
@@ -666,7 +710,7 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
           // Output should have inputs but doesn't need outputs
           connectionStatus.set(node.id, { 
             ...status, 
-            isValid: status.hasInputs 
+            isValid: status.hasInputs && status.connectionErrors.length === 0
           });
           break;
           
@@ -674,7 +718,7 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
           // All other nodes should have both inputs and outputs
           connectionStatus.set(node.id, { 
             ...status, 
-            isValid: status.hasInputs && status.hasOutputs 
+            isValid: status.hasInputs && status.hasOutputs && status.connectionErrors.length === 0
           });
       }
     });
@@ -692,10 +736,19 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
         style: {
           ...node.style,
           // Add a subtle border color based on validation status
-          borderColor: status?.isValid ? '#10b981' : status?.hasInputs || status?.hasOutputs ? '#f59e0b' : '#ef4444',
+          borderColor: status?.isValid ? '#10b981' : 
+                      (status?.connectionErrors && status.connectionErrors.length > 0) ? '#ef4444' : 
+                      (status?.hasInputs || status?.hasOutputs) ? '#f59e0b' : '#ef4444',
           borderWidth: 2,
           // Add a subtle background color for invalid nodes
-          backgroundColor: status?.isValid ? undefined : 'rgba(239, 68, 68, 0.05)'
+          backgroundColor: status?.isValid ? undefined : 
+                          (status?.connectionErrors && status.connectionErrors.length > 0) ? 'rgba(239, 68, 68, 0.1)' : 
+                          'rgba(239, 68, 68, 0.05)'
+        },
+        // Store connection errors in the node data for tooltips
+        data: {
+          ...node.data,
+          connectionErrors: status?.connectionErrors || []
         }
       };
     });

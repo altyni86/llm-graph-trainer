@@ -12,6 +12,7 @@ export interface LLMNodeData {
   label: string;
   type: NodeType;
   params: Record<string, unknown>;
+  connectionErrors?: string[];
 }
 
 // Embedding node data

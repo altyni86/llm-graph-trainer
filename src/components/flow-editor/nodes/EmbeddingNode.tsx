@@ -2,53 +2,70 @@
 
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { EmbeddingNodeData } from '@/lib/types';
+import { LLMNodeData } from '@/lib/types';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-const EmbeddingNodeComponent = ({ data, isConnectable }: NodeProps<EmbeddingNodeData>) => {
+export const EmbeddingNode = memo(({ data, isConnectable }: NodeProps<LLMNodeData>) => {
+  const hasErrors = data.connectionErrors && data.connectionErrors.length > 0;
+  
   return (
-    <div className="px-4 py-2 shadow-md rounded-md bg-white border-2 border-blue-500 min-w-[180px]">
-      <div className="flex items-center">
-        <div className="rounded-full w-10 h-10 flex items-center justify-center bg-blue-100 text-blue-800 text-xl">
-          📊
+    <div className="bg-slate-800 p-4 rounded-md border-2 shadow-md w-64">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="text-2xl">📊</div>
+          <div className="font-semibold">{data.label}</div>
         </div>
-        <div className="ml-2">
-          <div className="text-lg font-bold text-slate-800">{data.label}</div>
-          <div className="text-xs text-slate-500">Embedding Layer</div>
-        </div>
+        
+        {hasErrors && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="text-red-500 text-xl">⚠️</div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs bg-red-900 border-red-700">
+                <ul className="list-disc pl-4">
+                  {data.connectionErrors?.map((error: string, index: number) => (
+                    <li key={index} className="text-xs">{error}</li>
+                  ))}
+                </ul>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
-
-      <div className="mt-2 text-xs text-slate-600">
-        <div className="flex justify-between">
+      
+      <div className="text-xs text-slate-400 mb-2">
+        Converts token IDs to embeddings
+      </div>
+      
+      <div className="text-xs">
+        <div className="flex justify-between mb-1">
           <span>Vocab Size:</span>
-          <span className="font-mono">{data.params.vocabSize}</span>
+          <span>{String(data.params.vocabSize)}</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between mb-1">
           <span>Embedding Dim:</span>
-          <span className="font-mono">{data.params.embeddingDim}</span>
+          <span>{String(data.params.embeddingDim)}</span>
         </div>
       </div>
-
+      
       {/* Input handle */}
       <Handle
         type="target"
         position={Position.Left}
-        id="in"
         isConnectable={isConnectable}
         className="w-3 h-3 bg-blue-500"
       />
-
+      
       {/* Output handle */}
       <Handle
         type="source"
         position={Position.Right}
-        id="out"
         isConnectable={isConnectable}
-        className="w-3 h-3 bg-blue-500"
+        className="w-3 h-3 bg-green-500"
       />
     </div>
   );
-};
+});
 
-EmbeddingNodeComponent.displayName = 'EmbeddingNode';
-
-export const EmbeddingNode = memo(EmbeddingNodeComponent); 
+EmbeddingNode.displayName = 'EmbeddingNode'; 

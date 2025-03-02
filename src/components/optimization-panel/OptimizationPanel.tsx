@@ -49,7 +49,8 @@ export interface OptimizationSettings {
   // Attention optimizations
   flashAttention: boolean;
   xformers: boolean;
-  // Memory optimizations
+  // Debugging options
+  debug?: boolean;
   gradientCheckpointing: boolean;
   mixedPrecision: 'none' | 'fp16' | 'bf16';
   // Compilation
@@ -117,6 +118,7 @@ export const defaultOptimizationSettings: OptimizationSettings = {
     enabled: true,
     preferMps: true,
   },
+  debug: false,
   experiment: {
     enabled: false,
     batchSize: 16,
@@ -828,6 +830,27 @@ export function OptimizationPanel({ settings, onSettingsChange }: OptimizationPa
                   </TooltipTrigger>
                   <TooltipContent>
                     <p className="max-w-xs">Gradient checkpointing trades compute for memory by recomputing intermediate activations during the backward pass instead of storing them.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="debug-mode" 
+                  checked={settings.debug}
+                  onCheckedChange={(checked: boolean | "indeterminate") => updateSettings({ debug: checked === true })}
+                />
+                <Label htmlFor="debug-mode" className="font-medium">Debug Mode</Label>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <InfoIcon className="h-4 w-4 text-slate-400" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">Adds print statements to show tensor shapes during forward pass for debugging.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

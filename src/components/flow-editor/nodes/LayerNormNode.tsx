@@ -2,57 +2,70 @@
 
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { LayerNormNodeData } from '@/lib/types';
+import { LLMNodeData } from '@/lib/types';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-const LayerNormNodeComponent = ({ data, isConnectable }: NodeProps<LayerNormNodeData>) => {
+export const LayerNormNode = memo(({ data, isConnectable }: NodeProps<LLMNodeData>) => {
+  const hasErrors = data.connectionErrors && data.connectionErrors.length > 0;
+  
   return (
-    <div className="px-4 py-2 shadow-md rounded-md bg-white border-2 border-purple-500 min-w-[180px]">
-      <div className="flex items-center">
-        <div className="rounded-full w-10 h-10 flex items-center justify-center bg-purple-100 text-purple-800 text-xl">
-          📏
+    <div className="bg-slate-800 p-4 rounded-md border-2 shadow-md w-64">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="text-2xl">📏</div>
+          <div className="font-semibold">{data.label}</div>
         </div>
-        <div className="ml-2">
-          <div className="text-lg font-bold text-slate-800">{data.label}</div>
-          <div className="text-xs text-slate-500">Layer Normalization</div>
-        </div>
+        
+        {hasErrors && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="text-red-500 text-xl">⚠️</div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs bg-red-900 border-red-700">
+                <ul className="list-disc pl-4">
+                  {data.connectionErrors?.map((error: string, index: number) => (
+                    <li key={index} className="text-xs">{error}</li>
+                  ))}
+                </ul>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
       </div>
-
-      <div className="mt-2 text-xs text-slate-600">
-        <div className="flex justify-between">
+      
+      <div className="text-xs text-slate-400 mb-2">
+        Normalizes features across channels
+      </div>
+      
+      <div className="text-xs">
+        <div className="flex justify-between mb-1">
           <span>Normalized Shape:</span>
-          <span className="font-mono">{data.params.normalizedShape}</span>
+          <span>{String(data.params.normalizedShape)}</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between mb-1">
           <span>Epsilon:</span>
-          <span className="font-mono">{data.params.eps || '1e-5'}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Elementwise Affine:</span>
-          <span className="font-mono">{data.params.elementwiseAffine === false ? 'false' : 'true'}</span>
+          <span>{String(data.params.eps || '1e-5')}</span>
         </div>
       </div>
-
+      
       {/* Input handle */}
       <Handle
         type="target"
         position={Position.Left}
-        id="in"
         isConnectable={isConnectable}
-        className="w-3 h-3 bg-purple-500"
+        className="w-3 h-3 bg-blue-500"
       />
-
+      
       {/* Output handle */}
       <Handle
         type="source"
         position={Position.Right}
-        id="out"
         isConnectable={isConnectable}
-        className="w-3 h-3 bg-purple-500"
+        className="w-3 h-3 bg-green-500"
       />
     </div>
   );
-};
+});
 
-LayerNormNodeComponent.displayName = 'LayerNormNode';
-
-export const LayerNormNode = memo(LayerNormNodeComponent); 
+LayerNormNode.displayName = 'LayerNormNode'; 
