@@ -18,7 +18,7 @@ export default function Home() {
           </Button>
           
           <Button asChild variant="outline" className="border-blue-600 text-blue-400 hover:bg-blue-950">
-            <Link href="https://github.com/your-username/llm-graph-trainer" target="_blank">
+            <Link href="https://github.com/altyni86/llm-graph-trainer" target="_blank">
               View on GitHub
             </Link>
           </Button>

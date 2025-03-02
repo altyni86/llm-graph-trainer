@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from 'react';
 import { Node } from 'reactflow';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,6 +8,8 @@ import { LLMNodeData, NodeType } from '@/lib/types';
 
 interface NodePanelProps {
   setNodes: React.Dispatch<React.SetStateAction<Node<LLMNodeData>[]>>;
+  activeTab: string;
+  setActiveTab: React.Dispatch<React.SetStateAction<string>>;
 }
 
 interface NodeTemplate {
@@ -96,9 +97,7 @@ const nodeTemplates: NodeTemplate[] = [
   },
 ];
 
-export function NodePanel({ setNodes }: NodePanelProps) {
-  const [activeTab, setActiveTab] = useState<string>('components');
-
+export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps) {
   const onDragStart = (event: React.DragEvent, nodeType: NodeType, nodeData: LLMNodeData) => {
     try {
       const serializedData = JSON.stringify(nodeData);

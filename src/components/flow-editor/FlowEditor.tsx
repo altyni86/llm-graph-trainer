@@ -3,7 +3,7 @@
 import { useCallback, useState, useRef, useEffect } from 'react';
 import ReactFlow, {
   Node,
-  Edge,
+  // Edge removed to fix linter error
   Controls,
   Background,
   useNodesState,
@@ -70,7 +70,7 @@ function NodeProperties({ node, onChange }: {
     onChange(node.id, updatedData);
   };
   
-  const renderParamField = (paramName: string, value: any) => {
+  const renderParamField = (paramName: string, value: unknown) => {
     // Get parameter type
     const type = typeof value;
     
@@ -83,7 +83,7 @@ function NodeProperties({ node, onChange }: {
             </Label>
             <Input
               type="number"
-              value={value}
+              value={value as number}
               onChange={(e) => handleParamChange(paramName, Number(e.target.value))}
               className="bg-slate-700 border-slate-600"
             />
@@ -97,7 +97,7 @@ function NodeProperties({ node, onChange }: {
               {paramName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
             </Label>
             <Switch
-              checked={value}
+              checked={value as boolean}
               onCheckedChange={(checked) => handleParamChange(paramName, checked)}
             />
           </div>
@@ -126,7 +126,7 @@ function NodeProperties({ node, onChange }: {
                 {paramName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
               </Label>
               <Select
-                value={value}
+                value={value as string}
                 onValueChange={(val) => handleParamChange(paramName, val)}
               >
                 <SelectTrigger className="bg-slate-700 border-slate-600">
@@ -152,7 +152,7 @@ function NodeProperties({ node, onChange }: {
             </Label>
             <Input
               type="text"
-              value={value}
+              value={value as string}
               onChange={(e) => handleParamChange(paramName, e.target.value)}
               className="bg-slate-700 border-slate-600"
             />
@@ -201,7 +201,7 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={!!node.data.params.useFlashAttention}
+                checked={Boolean(node.data.params.useFlashAttention)}
                 onCheckedChange={(checked: boolean) => handleParamChange('useFlashAttention', checked)}
               />
             </div>
@@ -217,16 +217,16 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={!!node.data.params.useSlidingWindow}
+                checked={Boolean(node.data.params.useSlidingWindow)}
                 onCheckedChange={(checked: boolean) => handleParamChange('useSlidingWindow', checked)}
               />
             </div>
-            {node.data.params.useSlidingWindow && (
+            {Boolean(node.data.params.useSlidingWindow) && (
               <div className="mb-4">
                 <Label className="mb-2 block text-sm">Window Size</Label>
                 <Input
                   type="number"
-                  value={node.data.params.windowSize || 512}
+                  value={Number(node.data.params.windowSize || 512)}
                   onChange={(e) => handleParamChange('windowSize', Number(e.target.value))}
                   className="bg-slate-700 border-slate-600"
                 />
@@ -251,27 +251,25 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={!!node.data.params.useMoE}
+                checked={Boolean(node.data.params.useMoE)}
                 onCheckedChange={(checked: boolean) => handleParamChange('useMoE', checked)}
               />
             </div>
-            {node.data.params.useMoE && (
+            {Boolean(node.data.params.useMoE) && (
               <>
                 <div className="mb-4">
                   <Label className="mb-2 block text-sm">Number of Experts</Label>
-                  {console.log('Current numExperts value:', node.data.params.numExperts)}
                   <Slider
-                    value={[node.data.params.numExperts as number || 8]}
+                    value={[Number(node.data.params.numExperts || 8)]}
                     min={4}
                     max={32}
                     step={4}
                     onValueChange={(values) => {
-                      console.log('Slider value changed to:', values[0]);
                       handleParamChange('numExperts', values[0]);
                     }}
                     className="my-2"
                   />
-                  <div className="text-xs text-right">{node.data.params.numExperts || 8}</div>
+                  <div className="text-xs text-right">{Number(node.data.params.numExperts || 8)}</div>
                 </div>
                 <div className="mb-4">
                   <Label className="mb-2 block text-sm">Top-K Experts</Label>
@@ -291,6 +289,65 @@ function NodeProperties({ node, onChange }: {
                 </div>
               </>
             )}
+          </div>
+        );
+        
+      case 'layerNorm':
+        return (
+          <div className="mt-6 border-t border-slate-700 pt-4">
+            <h4 className="text-md font-semibold mb-4">Advanced Options</h4>
+            <div className="mb-4 flex items-center justify-between">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Label className="text-sm">Elementwise Affine</Label>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">When true, applies learnable per-element scale and bias.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Switch
+                checked={Boolean(node.data.params.elementwiseAffine)}
+                onCheckedChange={(checked: boolean) => handleParamChange('elementwiseAffine', checked)}
+              />
+            </div>
+            <div className="mb-4 flex items-center justify-between">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Label className="text-sm">Use Bias</Label>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">When true, adds a learnable bias term to the normalization.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Switch
+                checked={Boolean(node.data.params.bias)}
+                onCheckedChange={(checked: boolean) => handleParamChange('bias', checked)}
+              />
+            </div>
+            <div className="mb-4">
+              <Label className="mb-2 block text-sm">Epsilon</Label>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Input
+                      type="number"
+                      value={Number(node.data.params.eps || 1e-5)}
+                      onChange={(e) => handleParamChange('eps', Number(e.target.value))}
+                      className="bg-slate-700 border-slate-600"
+                      step="0.000001"
+                      min="0.000001"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">Small constant added to the denominator for numerical stability.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
         );
         
@@ -322,6 +379,8 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const renderCount = useRef(0);
+  // Add state for active tab in NodePanel
+  const [activeNodePanelTab, setActiveNodePanelTab] = useState<string>('components');
   
   // Increment render count on each render
   renderCount.current += 1;
@@ -452,7 +511,7 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
     
     // Return overall validity
     return Array.from(connectionStatus.values()).every(status => status.isValid);
-  }, [nodes, edges]);
+  }, [nodes, edges, setNodes]);
 
   // Call validation when nodes or edges change
   useEffect(() => {
@@ -575,7 +634,11 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
   return (
     <div className="w-full h-full flex">
       <div className="w-64 bg-slate-800 border-r border-slate-700 p-4 overflow-y-auto">
-        <NodePanel setNodes={setNodes} />
+        <NodePanel 
+          setNodes={setNodes} 
+          activeTab={activeNodePanelTab}
+          setActiveTab={setActiveNodePanelTab}
+        />
       </div>
       
       <div className="flex-1 h-full" ref={reactFlowWrapper}>
@@ -588,7 +651,7 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
             // If we have a selected node, check if it's being modified
             if (selectedNode) {
               const isSelectedNodeChanged = changes.some(change => 
-                change.id === selectedNode.id
+                'id' in change && change.id === selectedNode.id
               );
               if (isSelectedNodeChanged) {
                 console.log('Selected node is being modified by onNodesChange');
@@ -600,10 +663,13 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
             
             // Update selectedNode if it was changed
             if (selectedNode) {
-              const updatedNode = changes.find(change => change.id === selectedNode.id);
-              if (updatedNode) {
-                console.log('Need to update selectedNode after change:', updatedNode);
-              }
+              setTimeout(() => {
+                const updatedNode = nodes.find(node => node.id === selectedNode.id);
+                if (updatedNode && JSON.stringify(updatedNode) !== JSON.stringify(selectedNode)) {
+                  console.log('Updating selectedNode after onNodesChange:', updatedNode);
+                  setSelectedNode(updatedNode as Node<LLMNodeData>);
+                }
+              }, 0);
             }
           }}
           onEdgesChange={onEdgesChange}
