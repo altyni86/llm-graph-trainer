@@ -55,14 +55,32 @@ function NodeProperties({ node, onChange }: {
 }) {
   console.log('NodeProperties rendering for node:', node.id, node.data);
   
+  // Create a memoized version of the node data to prevent unnecessary re-renders
+  const memoizedNodeData = useCallback(() => {
+    return {
+      ...node.data,
+      params: { ...node.data.params }
+    };
+  }, [node.data]);
+  
   const handleParamChange = (paramName: string, value: unknown) => {
     console.log(`Parameter ${paramName} changing to:`, value);
+    
+    // Ensure the value has the correct type
+    let typedValue = value;
+    if (typeof value === 'string' && !isNaN(Number(value))) {
+      // Convert numeric strings to numbers
+      typedValue = Number(value);
+    } else if (value === 'true' || value === 'false') {
+      // Convert string booleans to actual booleans
+      typedValue = value === 'true';
+    }
     
     const updatedData = {
       ...node.data,
       params: {
         ...node.data.params,
-        [paramName]: value
+        [paramName]: typedValue
       }
     };
     
@@ -73,9 +91,48 @@ function NodeProperties({ node, onChange }: {
   const renderParamField = (paramName: string, value: unknown) => {
     // Get parameter type
     const type = typeof value;
+    console.log(`renderParamField for ${paramName}:`, value, 'type:', type);
+    
+    // Handle special cases for known boolean parameters
+    if (['useFlashAttention', 'useSlidingWindow', 'useMoE', 'elementwiseAffine', 'bias'].includes(paramName)) {
+      console.log(`Rendering special boolean field for ${paramName}`);
+      return (
+        <div className="mb-4 flex items-center justify-between" key={paramName}>
+          <Label className="text-sm">
+            {paramName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+          </Label>
+          <Switch
+            checked={!!value}
+            onCheckedChange={(checked) => handleParamChange(paramName, checked)}
+          />
+        </div>
+      );
+    }
+    
+    // Handle special cases for known numeric parameters
+    if (['windowSize', 'numExperts', 'topK', 'eps'].includes(paramName)) {
+      console.log(`Rendering special numeric field for ${paramName}`);
+      const numValue = typeof value === 'number' ? value : Number(value || 0);
+      return (
+        <div className="mb-4" key={paramName}>
+          <Label className="mb-2 block text-sm">
+            {paramName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+          </Label>
+          <Input
+            type="number"
+            value={numValue}
+            onChange={(e) => handleParamChange(paramName, Number(e.target.value))}
+            className="bg-slate-700 border-slate-600"
+            step={paramName === 'eps' ? "0.000001" : "1"}
+            min={paramName === 'eps' ? "0.000001" : "0"}
+          />
+        </div>
+      );
+    }
     
     switch (type) {
       case 'number':
+        console.log(`Rendering number field for ${paramName}`);
         return (
           <div className="mb-4" key={paramName}>
             <Label className="mb-2 block text-sm">
@@ -91,6 +148,7 @@ function NodeProperties({ node, onChange }: {
         );
         
       case 'boolean':
+        console.log(`Rendering boolean field for ${paramName}`);
         return (
           <div className="mb-4 flex items-center justify-between" key={paramName}>
             <Label className="text-sm">
@@ -104,6 +162,7 @@ function NodeProperties({ node, onChange }: {
         );
         
       case 'string':
+        console.log(`Rendering string field for ${paramName}`);
         // Check if this is an enum-like field (activation, encodingType, etc.)
         if (
           ['activation', 'encodingType', 'attentionType'].includes(paramName) ||
@@ -120,6 +179,7 @@ function NodeProperties({ node, onChange }: {
             options = ['dot_product', 'scaled_dot_product', 'additive'];
           }
           
+          console.log(`Rendering select field for ${paramName} with options:`, options);
           return (
             <div className="mb-4" key={paramName}>
               <Label className="mb-2 block text-sm">
@@ -160,6 +220,7 @@ function NodeProperties({ node, onChange }: {
         );
         
       default:
+        console.log(`Rendering default field for ${paramName} with unknown type:`, type);
         return (
           <div className="mb-4" key={paramName}>
             <Label className="mb-2 block text-sm">
@@ -184,8 +245,27 @@ function NodeProperties({ node, onChange }: {
   
   // Add node-type specific optimizations
   const renderOptimizations = () => {
+    console.log('renderOptimizations called for node type:', node.data.type);
+    console.log('Node params:', node.data.params);
+    
+    // Get the node data with proper type handling
+    const nodeData = memoizedNodeData();
+    
     switch (node.data.type) {
       case 'qkvAttention':
+        console.log('Rendering qkvAttention optimizations');
+        
+        // Ensure proper boolean values
+        const useFlashAttention = !!nodeData.params.useFlashAttention;
+        const useSlidingWindow = !!nodeData.params.useSlidingWindow;
+        const windowSize = typeof nodeData.params.windowSize === 'number' 
+          ? nodeData.params.windowSize 
+          : Number(nodeData.params.windowSize || 512);
+        
+        console.log('useFlashAttention:', useFlashAttention);
+        console.log('useSlidingWindow:', useSlidingWindow);
+        console.log('windowSize:', windowSize);
+        
         return (
           <div className="mt-6 border-t border-slate-700 pt-4">
             <h4 className="text-md font-semibold mb-4">Optimizations</h4>
@@ -201,7 +281,7 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={Boolean(node.data.params.useFlashAttention)}
+                checked={useFlashAttention}
                 onCheckedChange={(checked: boolean) => handleParamChange('useFlashAttention', checked)}
               />
             </div>
@@ -217,16 +297,16 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={Boolean(node.data.params.useSlidingWindow)}
+                checked={useSlidingWindow}
                 onCheckedChange={(checked: boolean) => handleParamChange('useSlidingWindow', checked)}
               />
             </div>
-            {Boolean(node.data.params.useSlidingWindow) && (
+            {useSlidingWindow && (
               <div className="mb-4">
                 <Label className="mb-2 block text-sm">Window Size</Label>
                 <Input
                   type="number"
-                  value={Number(node.data.params.windowSize || 512)}
+                  value={windowSize}
                   onChange={(e) => handleParamChange('windowSize', Number(e.target.value))}
                   className="bg-slate-700 border-slate-600"
                 />
@@ -236,6 +316,21 @@ function NodeProperties({ node, onChange }: {
         );
         
       case 'ffn':
+        console.log('Rendering ffn optimizations');
+        
+        // Ensure proper boolean and numeric values
+        const useMoE = !!nodeData.params.useMoE;
+        const numExperts = typeof nodeData.params.numExperts === 'number' 
+          ? nodeData.params.numExperts 
+          : Number(nodeData.params.numExperts || 8);
+        const topK = typeof nodeData.params.topK === 'number' 
+          ? nodeData.params.topK 
+          : Number(nodeData.params.topK || 2);
+        
+        console.log('useMoE:', useMoE);
+        console.log('numExperts:', numExperts);
+        console.log('topK:', topK);
+        
         return (
           <div className="mt-6 border-t border-slate-700 pt-4">
             <h4 className="text-md font-semibold mb-4">Optimizations</h4>
@@ -251,16 +346,16 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={Boolean(node.data.params.useMoE)}
+                checked={useMoE}
                 onCheckedChange={(checked: boolean) => handleParamChange('useMoE', checked)}
               />
             </div>
-            {Boolean(node.data.params.useMoE) && (
+            {useMoE && (
               <>
                 <div className="mb-4">
                   <Label className="mb-2 block text-sm">Number of Experts</Label>
                   <Slider
-                    value={[Number(node.data.params.numExperts || 8)]}
+                    value={[numExperts]}
                     min={4}
                     max={32}
                     step={4}
@@ -269,12 +364,12 @@ function NodeProperties({ node, onChange }: {
                     }}
                     className="my-2"
                   />
-                  <div className="text-xs text-right">{Number(node.data.params.numExperts || 8)}</div>
+                  <div className="text-xs text-right">{numExperts}</div>
                 </div>
                 <div className="mb-4">
                   <Label className="mb-2 block text-sm">Top-K Experts</Label>
                   <Select
-                    value={String(node.data.params.topK || 2)}
+                    value={String(topK)}
                     onValueChange={(val) => handleParamChange('topK', Number(val))}
                   >
                     <SelectTrigger className="bg-slate-700 border-slate-600">
@@ -293,6 +388,19 @@ function NodeProperties({ node, onChange }: {
         );
         
       case 'layerNorm':
+        console.log('Rendering layerNorm optimizations');
+        
+        // Ensure proper boolean and numeric values
+        const elementwiseAffine = !!nodeData.params.elementwiseAffine;
+        const bias = !!nodeData.params.bias;
+        const eps = typeof nodeData.params.eps === 'number' 
+          ? nodeData.params.eps 
+          : Number(nodeData.params.eps || 1e-5);
+        
+        console.log('elementwiseAffine:', elementwiseAffine);
+        console.log('bias:', bias);
+        console.log('eps:', eps);
+        
         return (
           <div className="mt-6 border-t border-slate-700 pt-4">
             <h4 className="text-md font-semibold mb-4">Advanced Options</h4>
@@ -308,7 +416,7 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={Boolean(node.data.params.elementwiseAffine)}
+                checked={elementwiseAffine}
                 onCheckedChange={(checked: boolean) => handleParamChange('elementwiseAffine', checked)}
               />
             </div>
@@ -324,7 +432,7 @@ function NodeProperties({ node, onChange }: {
                 </Tooltip>
               </TooltipProvider>
               <Switch
-                checked={Boolean(node.data.params.bias)}
+                checked={bias}
                 onCheckedChange={(checked: boolean) => handleParamChange('bias', checked)}
               />
             </div>
@@ -335,7 +443,7 @@ function NodeProperties({ node, onChange }: {
                   <TooltipTrigger asChild>
                     <Input
                       type="number"
-                      value={Number(node.data.params.eps || 1e-5)}
+                      value={eps}
                       onChange={(e) => handleParamChange('eps', Number(e.target.value))}
                       className="bg-slate-700 border-slate-600"
                       step="0.000001"
@@ -373,18 +481,111 @@ function NodeProperties({ node, onChange }: {
 
 export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorProps) {
   console.log('FlowEditor rendering');
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  
+  // Initialize nodes and edges from localStorage if available
+  const getInitialNodes = (): Node<LLMNodeData>[] => {
+    try {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') return [];
+      
+      const savedNodes = localStorage.getItem('llm-graph-nodes');
+      return savedNodes ? JSON.parse(savedNodes) : [];
+    } catch (error) {
+      console.error('Error loading nodes from localStorage:', error);
+      return [];
+    }
+  };
+  
+  const getInitialEdges = () => {
+    try {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') return [];
+      
+      const savedEdges = localStorage.getItem('llm-graph-edges');
+      return savedEdges ? JSON.parse(savedEdges) : [];
+    } catch (error) {
+      console.error('Error loading edges from localStorage:', error);
+      return [];
+    }
+  };
+  
+  const [nodes, setNodes, onNodesChange] = useNodesState(getInitialNodes());
+  const [edges, setEdges, onEdgesChange] = useEdgesState(getInitialEdges());
   const [selectedNode, setSelectedNode] = useState<Node<LLMNodeData> | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const renderCount = useRef(0);
   // Add state for active tab in NodePanel
-  const [activeNodePanelTab, setActiveNodePanelTab] = useState<string>('components');
+  const [activeNodePanelTab, setActiveNodePanelTab] = useState<string>(() => {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') return 'components';
+    
+    const savedTab = localStorage.getItem('llm-graph-active-tab');
+    return savedTab || 'components';
+  });
+  
+  // Create a ref to store the component state
+  const componentsRef = useRef<{
+    [key: string]: {
+      visible: boolean;
+      data: Record<string, unknown>;
+    }
+  }>({});
   
   // Increment render count on each render
   renderCount.current += 1;
   console.log(`Render count: ${renderCount.current}`);
+
+  // Save nodes and edges to localStorage whenever they change
+  useEffect(() => {
+    try {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') return;
+      
+      localStorage.setItem('llm-graph-nodes', JSON.stringify(nodes));
+      localStorage.setItem('llm-graph-edges', JSON.stringify(edges));
+      console.log('Saved graph state to localStorage');
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }, [nodes, edges]);
+
+  // Add effect to track tab changes
+  useEffect(() => {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') return;
+    
+    console.log('Tab changed to:', activeNodePanelTab);
+    if (selectedNode) {
+      console.log('Selected node during tab change:', selectedNode.id, selectedNode.data);
+    }
+    
+    // Store component visibility state when switching tabs
+    if (componentsRef.current) {
+      // When tab changes, we need to preserve whatever was visible in the previous tab
+      if (activeNodePanelTab === 'components') {
+        componentsRef.current.templates = { visible: false, data: componentsRef.current.templates?.data || {} };
+        componentsRef.current.components = { visible: true, data: componentsRef.current.components?.data || {} };
+      } else if (activeNodePanelTab === 'templates') {
+        componentsRef.current.components = { visible: false, data: componentsRef.current.components?.data || {} };
+        componentsRef.current.templates = { visible: true, data: componentsRef.current.templates?.data || {} };
+      }
+    }
+    
+    // Save active tab to localStorage
+    localStorage.setItem('llm-graph-active-tab', activeNodePanelTab);
+  }, [activeNodePanelTab, selectedNode]);
+  
+  // Load active tab from localStorage on initial render
+  useEffect(() => {
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined') return;
+    
+    const savedTab = localStorage.getItem('llm-graph-active-tab');
+    if (savedTab) {
+      setActiveNodePanelTab(savedTab);
+    }
+  }, []);
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -593,12 +794,23 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
   useEffect(() => {
     // If there's a selected node, find its latest version in the nodes array
     if (selectedNode) {
+      console.log('useEffect for selectedNode sync triggered');
+      console.log('Current selectedNode:', selectedNode.id, selectedNode.data);
+      
       const updatedNode = nodes.find(node => node.id === selectedNode.id);
       
-      // If the node exists and has changed, update the selectedNode reference
-      if (updatedNode && JSON.stringify(updatedNode) !== JSON.stringify(selectedNode)) {
-        console.log('Updating selectedNode to match nodes array:', updatedNode);
-        setSelectedNode(updatedNode as Node<LLMNodeData>);
+      if (updatedNode) {
+        console.log('Found updatedNode in nodes array:', updatedNode.id, updatedNode.data);
+        
+        // If the node exists and has changed, update the selectedNode reference
+        if (JSON.stringify(updatedNode) !== JSON.stringify(selectedNode)) {
+          console.log('Node has changed, updating selectedNode');
+          setSelectedNode(updatedNode as Node<LLMNodeData>);
+        } else {
+          console.log('Node has not changed, skipping update');
+        }
+      } else {
+        console.log('Node not found in nodes array');
       }
     }
   }, [nodes, selectedNode]);
@@ -608,15 +820,19 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
     console.log('handleNodeUpdate called with:', id, data);
     
     setNodes((nds) => {
+      console.log('Updating nodes array with new data');
       const updatedNodes = nds.map((node) => {
         if (node.id === id) {
           // Create the updated node
           const updatedNode = { ...node, data };
+          console.log('Created updated node:', updatedNode.id, updatedNode.data);
           
           // If this is the currently selected node, update the selectedNode state too
           if (selectedNode && selectedNode.id === id) {
+            console.log('This is the selected node, updating selectedNode state');
             // We need to use setTimeout to avoid React batch updates overriding this
             setTimeout(() => {
+              console.log('Inside setTimeout, updating selectedNode');
               setSelectedNode(updatedNode as Node<LLMNodeData>);
             }, 0);
           }

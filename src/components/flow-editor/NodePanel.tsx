@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LLMNodeData, NodeType } from '@/lib/types';
+import { useState, useEffect, useRef } from 'react';
 
 interface NodePanelProps {
   setNodes: React.Dispatch<React.SetStateAction<Node<LLMNodeData>[]>>;
@@ -98,6 +99,51 @@ const nodeTemplates: NodeTemplate[] = [
 ];
 
 export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps) {
+  // Add a memoized state to maintain component persistence across renders
+  const [componentsState] = useState<{
+    templates: { visible: boolean };
+    components: { visible: boolean };
+  }>({
+    templates: { visible: activeTab === 'templates' },
+    components: { visible: activeTab === 'components' },
+  });
+
+  // Store the node templates in a ref to prevent re-creation on each render
+  const nodeTemplatesRef = useRef(nodeTemplates);
+
+  useEffect(() => {
+    // Update visibility state when tab changes
+    componentsState.templates.visible = activeTab === 'templates';
+    componentsState.components.visible = activeTab === 'components';
+    
+    // Save the current state to localStorage
+    try {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') return;
+      
+      localStorage.setItem('llm-graph-component-state', JSON.stringify(componentsState));
+    } catch (error) {
+      console.error('Error saving component state to localStorage:', error);
+    }
+  }, [activeTab, componentsState]);
+
+  // Load component state from localStorage on initial render
+  useEffect(() => {
+    try {
+      // Check if we're in a browser environment
+      if (typeof window === 'undefined') return;
+      
+      const savedState = localStorage.getItem('llm-graph-component-state');
+      if (savedState) {
+        const parsedState = JSON.parse(savedState);
+        componentsState.templates.visible = parsedState.templates.visible;
+        componentsState.components.visible = parsedState.components.visible;
+      }
+    } catch (error) {
+      console.error('Error loading component state from localStorage:', error);
+    }
+  }, [componentsState]);
+
   const onDragStart = (event: React.DragEvent, nodeType: NodeType, nodeData: LLMNodeData) => {
     try {
       const serializedData = JSON.stringify(nodeData);
@@ -125,7 +171,19 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
       data: nodeData,
     };
 
-    setNodes((nds) => nds.concat(newNode));
+    setNodes((nds) => {
+      const updatedNodes = nds.concat(newNode);
+      // Save to localStorage immediately
+      try {
+        // Check if we're in a browser environment
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('llm-graph-nodes', JSON.stringify(updatedNodes));
+        }
+      } catch (error) {
+        console.error('Error saving nodes to localStorage:', error);
+      }
+      return updatedNodes;
+    });
   };
 
   return (
@@ -138,9 +196,14 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
           <TabsTrigger value="templates">Templates</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="components" className="flex-1 overflow-y-auto">
+        <TabsContent 
+          value="components" 
+          className="flex-1 overflow-y-auto"
+          forceMount
+          style={{ display: activeTab === 'components' ? 'block' : 'none' }}
+        >
           <div className="space-y-3">
-            {nodeTemplates.map((template) => (
+            {nodeTemplatesRef.current.map((template) => (
               <Card 
                 key={template.type}
                 className="p-3 cursor-grab bg-slate-700 hover:bg-slate-600 transition-colors"
@@ -164,7 +227,12 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
           </div>
         </TabsContent>
         
-        <TabsContent value="templates" className="flex-1 overflow-y-auto">
+        <TabsContent 
+          value="templates" 
+          className="flex-1 overflow-y-auto"
+          forceMount
+          style={{ display: activeTab === 'templates' ? 'block' : 'none' }}
+        >
           <div className="space-y-3">
             <Card className="p-3 cursor-grab bg-slate-700 hover:bg-slate-600 transition-colors">
               <div className="flex items-center gap-3">
@@ -200,8 +268,48 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
       </Tabs>
       
       <div className="mt-4 pt-4 border-t border-slate-700">
-        <Button variant="outline" className="w-full" size="sm">
+        <Button 
+          variant="outline" 
+          className="w-full mb-2" 
+          size="sm"
+          onClick={() => {
+            // Check if we're in a browser environment
+            if (typeof window === 'undefined') return;
+            
+            // Confirm before clearing the canvas
+            if (window.confirm('Are you sure you want to clear the canvas? This action cannot be undone.')) {
+              setNodes([]);
+              // Also clear the nodes from localStorage
+              localStorage.setItem('llm-graph-nodes', JSON.stringify([]));
+              localStorage.setItem('llm-graph-edges', JSON.stringify([]));
+            }
+          }}
+        >
           Clear Canvas
+        </Button>
+        
+        <Button 
+          variant="outline" 
+          className="w-full" 
+          size="sm"
+          onClick={() => {
+            // Check if we're in a browser environment
+            if (typeof window === 'undefined') return;
+            
+            // Confirm before resetting storage
+            if (window.confirm('Are you sure you want to reset all stored data? This will clear your canvas and all saved preferences.')) {
+              // Clear all app-related localStorage items
+              localStorage.removeItem('llm-graph-nodes');
+              localStorage.removeItem('llm-graph-edges');
+              localStorage.removeItem('llm-graph-active-tab');
+              localStorage.removeItem('llm-graph-component-state');
+              
+              // Reload the page to apply changes
+              window.location.reload();
+            }
+          }}
+        >
+          Reset Storage
         </Button>
       </div>
     </div>
