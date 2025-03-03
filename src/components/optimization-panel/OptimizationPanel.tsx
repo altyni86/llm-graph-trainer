@@ -17,6 +17,12 @@ export interface OptimizationSettings {
     autoWrap: boolean;
     minNumParams: number;
   };
+  dualPipe: {
+    enabled: boolean;
+    numChunks: number;
+    batchDim: number;
+    rankMapping: number[] | null;
+  };
   deepSpeed: {
     enabled: boolean;
     stageThree: boolean;
@@ -80,6 +86,12 @@ export const defaultOptimizationSettings: OptimizationSettings = {
     shardingStrategy: 'FULL_SHARD',
     autoWrap: true,
     minNumParams: 1e8,
+  },
+  dualPipe: {
+    enabled: false,
+    numChunks: 0,
+    batchDim: 0,
+    rankMapping: null,
   },
   deepSpeed: {
     enabled: false,
@@ -185,6 +197,13 @@ export function OptimizationPanel({ settings, onSettingsChange }: OptimizationPa
     });
   };
 
+  const updateDualPipeSettings = (partialSettings: Partial<OptimizationSettings['dualPipe']>) => {
+    onSettingsChange({
+      ...settings,
+      dualPipe: { ...settings.dualPipe, ...partialSettings },
+    });
+  };
+
   return (
     <div className="flex flex-col h-full">
       <h3 className="text-lg font-semibold mb-4">Optimization Settings</h3>
@@ -202,7 +221,7 @@ export function OptimizationPanel({ settings, onSettingsChange }: OptimizationPa
         {/* Parallelism Tab */}
         <TabsContent value="parallelism" className="flex-1 overflow-y-auto space-y-4">
           <Card className="p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
                 <Checkbox 
                   id="fsdp-enabled" 
@@ -219,7 +238,7 @@ export function OptimizationPanel({ settings, onSettingsChange }: OptimizationPa
                     }
                   }}
                 />
-                <Label htmlFor="fsdp-enabled" className="font-medium">Fully Sharded Data Parallel (FSDP)</Label>
+                <Label htmlFor="fsdp-enabled" className="font-medium">Fully Sharded Data Parallel</Label>
               </div>
               <TooltipProvider>
                 <Tooltip>
@@ -227,7 +246,7 @@ export function OptimizationPanel({ settings, onSettingsChange }: OptimizationPa
                     <InfoIcon className="h-4 w-4 text-slate-400" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p className="max-w-xs">FSDP shards model parameters, gradients, and optimizer states across data parallel workers to reduce memory usage.</p>
+                    <p className="max-w-xs">FSDP shards model parameters across data parallel workers to reduce memory usage.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -259,6 +278,124 @@ export function OptimizationPanel({ settings, onSettingsChange }: OptimizationPa
                     onCheckedChange={(checked: boolean | "indeterminate") => updateFSDPSettings({ autoWrap: checked === true })}
                   />
                   <Label htmlFor="fsdp-autowrap">Auto Wrap</Label>
+                </div>
+              </div>
+            )}
+          </Card>
+          
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="dualpipe-enabled" 
+                  checked={settings.dualPipe.enabled}
+                  onCheckedChange={(checked: boolean | "indeterminate") => updateDualPipeSettings({ enabled: checked === true })}
+                />
+                <Label htmlFor="dualpipe-enabled" className="font-medium">DualPipe Parallelism</Label>
+              </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <InfoIcon className="h-4 w-4 text-slate-400" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">DualPipe is a pipeline parallelism strategy that reduces bubble overhead by using bidirectional pipeline execution.</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+
+            {settings.dualPipe.enabled && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="num-chunks" className="text-xs">Number of Chunks</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <InfoIcon className="h-3 w-3 text-slate-400" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Number of micro-batches for pipeline parallelism. Must be even and {'>='} 2 * number of pipeline stages.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <input
+                    id="num-chunks"
+                    type="number"
+                    className="w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={settings.dualPipe.numChunks}
+                    onChange={(e) => updateDualPipeSettings({ numChunks: parseInt(e.target.value) || 0 })}
+                    min="2"
+                    step="2"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="batch-dim" className="text-xs">Batch Dimension</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <InfoIcon className="h-3 w-3 text-slate-400" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">The dimension along which to split the input batch for pipeline parallelism.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <input
+                    id="batch-dim"
+                    type="number"
+                    className="w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={settings.dualPipe.batchDim}
+                    onChange={(e) => updateDualPipeSettings({ batchDim: parseInt(e.target.value) || 0 })}
+                    min="0"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="rank-mapping" className="text-xs">Rank Mapping</Label>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <InfoIcon className="h-3 w-3 text-slate-400" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">Comma-separated list of process ranks for pipeline stages (e.g., &quot;0,1,2,3&quot;). Leave empty for automatic mapping.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <input
+                    id="rank-mapping"
+                    type="text"
+                    className="w-full h-8 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                    value={settings.dualPipe.rankMapping?.join(',') || ''}
+                    onChange={(e) => {
+                      const value = e.target.value.trim();
+                      const ranks = value ? value.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : null;
+                      updateDualPipeSettings({ rankMapping: ranks });
+                    }}
+                    placeholder="e.g., 0,1,2,3"
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <InfoIcon className="h-4 w-4 text-slate-400" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">DualPipe uses P2P communication for tensor transfer between pipeline stages. Tensor shapes are automatically configured based on model architecture.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <p className="text-xs text-slate-500">Uses P2P communication for tensor transfer between stages</p>
                 </div>
               </div>
             )}
