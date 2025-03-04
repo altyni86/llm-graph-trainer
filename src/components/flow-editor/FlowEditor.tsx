@@ -643,7 +643,12 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
       'layerNorm': ['qkvAttention', 'ffn', 'output', 'layerNorm'],
       'qkvAttention': ['layerNorm', 'ffn', 'output', 'qkvAttention'],
       'ffn': ['layerNorm', 'qkvAttention', 'output', 'ffn'],
-      'output': [] // Output nodes shouldn't connect to anything
+      'output': ['sftTraining', 'ppoTraining', 'dpoTraining', 'grpoTraining'], // Output nodes can connect to training nodes
+      // Training nodes can only connect to other training nodes in sequence
+      'sftTraining': ['ppoTraining', 'dpoTraining', 'grpoTraining'],
+      'ppoTraining': ['dpoTraining', 'grpoTraining'],
+      'dpoTraining': ['grpoTraining'],
+      'grpoTraining': []
     };
     
     // Check connections
@@ -660,6 +665,12 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
       
       const isValidConnection = validConnections[sourceType]?.includes(targetType);
       
+      // Special validation for training nodes - they must be connected in sequence
+      const isTrainingNode = sourceType === 'sftTraining' || sourceType === 'ppoTraining' || 
+                            sourceType === 'dpoTraining' || sourceType === 'grpoTraining';
+      const isTargetTrainingNode = targetType === 'sftTraining' || targetType === 'ppoTraining' || 
+                                  targetType === 'dpoTraining' || targetType === 'grpoTraining';
+      
       // Mark source node as having outputs
       const sourceStatus = connectionStatus.get(edge.source);
       if (sourceStatus) {
@@ -673,6 +684,13 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
           updatedStatus.connectionErrors.push(
             `Invalid connection: ${sourceNode.data.label} cannot connect to ${targetNode.data.label}`
           );
+          
+          // Add specific error message for training nodes
+          if (isTrainingNode && isTargetTrainingNode) {
+            updatedStatus.connectionErrors.push(
+              `Post-training components must be connected in sequence (SFT → PPO → DPO → GRPO)`
+            );
+          }
         }
         
         connectionStatus.set(edge.source, updatedStatus);
@@ -716,6 +734,24 @@ export function FlowEditor({ onGenerateCode, optimizationSettings }: FlowEditorP
           
         case 'output':
           // Output should have inputs but doesn't need outputs
+          connectionStatus.set(node.id, { 
+            ...status, 
+            isValid: status.hasInputs && status.connectionErrors.length === 0
+          });
+          break;
+          
+        case 'sftTraining':
+          // SFT Training should have inputs (from model output) but doesn't necessarily need outputs
+          connectionStatus.set(node.id, { 
+            ...status, 
+            isValid: status.hasInputs && status.connectionErrors.length === 0
+          });
+          break;
+          
+        case 'ppoTraining':
+        case 'dpoTraining':
+        case 'grpoTraining':
+          // Other training nodes should have inputs from previous training stage
           connectionStatus.set(node.id, { 
             ...status, 
             isValid: status.hasInputs && status.connectionErrors.length === 0

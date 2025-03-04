@@ -22,31 +22,47 @@ export function generatePythonCode(
   edges: Edge[],
   optimizationSettings?: OptimizationSettings
 ): string {
+  // Separate model nodes from training nodes
+  const modelNodes = nodes.filter(node => 
+    !['sftTraining', 'ppoTraining', 'dpoTraining', 'grpoTraining'].includes(node.data.type)
+  );
+  
+  const trainingNodes = nodes.filter(node => 
+    ['sftTraining', 'ppoTraining', 'dpoTraining', 'grpoTraining'].includes(node.data.type)
+  );
+  
   // Sort nodes by dependencies
-  const sortedNodes = sortNodesByDependencies(nodes, edges);
+  const sortedModelNodes = sortNodesByDependencies(modelNodes, edges);
+  
+  // Sort training nodes in the correct sequence (SFT -> PPO -> DPO -> GRPO)
+  const sortedTrainingNodes = sortTrainingNodesBySequence(trainingNodes);
   
   // Generate code
   const imports = generateImports(optimizationSettings);
   const hyperparameters = generateHyperparameters(optimizationSettings);
   const deviceDetection = generateDeviceDetectionCode(optimizationSettings || defaultOptimizationSettings);
-  const componentDefinitions = sortedNodes.map(node => 
+  const componentDefinitions = sortedModelNodes.map(node => 
     generateComponentDefinition(node, optimizationSettings)
   ).join('\n\n');
   const modelClass = `class LLMModel(nn.Module):
     def __init__(self):
         super().__init__()
-        ${sortedNodes.map(node => {
+        ${sortedModelNodes.map(node => {
           const componentName = `self.${node.id}`;
           return `${componentName} = ${node.id.charAt(0).toUpperCase() + node.id.slice(1)}()`;
         }).join('\n        ')}
         
     def forward(self, x):
-${generateForwardPass(sortedNodes, edges, optimizationSettings)}
-        return ${sortedNodes.length > 0 ? `x_${sortedNodes.length}` : 'x'}`;
+${generateForwardPass(sortedModelNodes, edges, optimizationSettings)}
+        return ${sortedModelNodes.length > 0 ? `x_${sortedModelNodes.length}` : 'x'}`;
 
   const trainingCode = optimizationSettings ? generateTrainingCode(optimizationSettings) : '';
   const experimentCode = optimizationSettings?.experiment?.enabled ? 
     generateExperimentCode(optimizationSettings) : '';
+    
+  // Generate post-training pipeline if training nodes exist
+  const postTrainingPipeline = sortedTrainingNodes.length > 0 ? 
+    generatePostTrainingPipeline(sortedTrainingNodes) : '';
 
   return `${imports}
 
@@ -61,6 +77,8 @@ ${modelClass}
 ${trainingCode}
 
 ${experimentCode}
+
+${postTrainingPipeline}
 
 if __name__ == "__main__":
     print("=" * 50)
@@ -79,6 +97,8 @@ if __name__ == "__main__":
     if ${optimizationSettings?.experiment?.enabled || 'False'}:
         run_experiment(model)
         print("\\nExperiment completed successfully!")
+    
+    ${sortedTrainingNodes.length > 0 ? 'if input("\\nRun post-training pipeline? (y/n): ").lower() == "y":\\n    run_post_training_pipeline(model)' : ''}
 `;
 }
 
@@ -1831,4 +1851,217 @@ class GRPOTrainer:
         
         return loss.mean()
 `;
+}
+
+/**
+ * Sorts training nodes in the correct sequence (SFT -> PPO -> DPO -> GRPO)
+ */
+function sortTrainingNodesBySequence(trainingNodes: Node<LLMNodeData>[]): Node<LLMNodeData>[] {
+  const nodeTypeOrder = {
+    'sftTraining': 0,
+    'ppoTraining': 1,
+    'dpoTraining': 2,
+    'grpoTraining': 3
+  };
+  
+  return [...trainingNodes].sort((a, b) => {
+    return nodeTypeOrder[a.data.type as keyof typeof nodeTypeOrder] - 
+           nodeTypeOrder[b.data.type as keyof typeof nodeTypeOrder];
+  });
+}
+
+/**
+ * Generates code for the post-training pipeline
+ */
+function generatePostTrainingPipeline(trainingNodes: Node<LLMNodeData>[]): string {
+  if (trainingNodes.length === 0) return '';
+  
+  // Generate imports for training modules
+  const imports = trainingNodes.map(node => {
+    switch (node.data.type) {
+      case 'sftTraining':
+        return 'from sft_module import SupervisedFineTuning';
+      case 'ppoTraining':
+        return 'from ppo_module import PPOTrainer';
+      case 'dpoTraining':
+        return 'from dpo_module import DPOTrainer';
+      case 'grpoTraining':
+        return 'from grpo_module import GRPOTrainer';
+      default:
+        return '';
+    }
+  }).filter(Boolean).join('\n');
+  
+  // Generate training stages
+  const trainingStages = trainingNodes.map(node => {
+    switch (node.data.type) {
+      case 'sftTraining':
+        return generateSFTTrainingStage(node as Node<SFTTrainingNodeData>);
+      case 'ppoTraining':
+        return generatePPOTrainingStage(node as Node<PPOTrainingNodeData>);
+      case 'dpoTraining':
+        return generateDPOTrainingStage(node as Node<DPOTrainingNodeData>);
+      case 'grpoTraining':
+        return generateGRPOTrainingStage(node as Node<GRPOTrainingNodeData>);
+      default:
+        return '';
+    }
+  }).join('\n\n    ');
+  
+  return `
+# Post-training pipeline
+${imports}
+
+def run_post_training_pipeline(base_model):
+    """
+    Complete post-training pipeline that applies multiple training methods in sequence:
+    ${trainingNodes.map(node => `- ${node.data.label}`).join('\n    ')}
+    
+    Args:
+        base_model: The base model to start with
+    
+    Returns:
+        The final trained model
+    """
+    print("\\n" + "="*50)
+    print("Starting post-training pipeline...")
+    print("="*50)
+    
+    # Make a copy of the base model for training
+    import copy
+    model = copy.deepcopy(base_model)
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")  # Replace with appropriate tokenizer
+    
+    ${trainingStages}
+    
+    # Save the final model
+    final_model_path = "./final_model"
+    model.save_pretrained(final_model_path)
+    tokenizer.save_pretrained(final_model_path)
+    print(f"Final model saved to {final_model_path}")
+    
+    return model, tokenizer
+`;
+}
+
+/**
+ * Generates code for SFT training stage
+ */
+function generateSFTTrainingStage(node: Node<SFTTrainingNodeData>): string {
+  const params = node.data.params;
+  
+  return `# 1. Supervised Fine-Tuning (SFT)
+    print("\\nStep 1: Starting Supervised Fine-Tuning (SFT)")
+    
+    sft_trainer = SupervisedFineTuning(
+        model=model,
+        tokenizer=tokenizer,
+        dataset_path="${params.datasetPath}",
+        learning_rate=${params.learningRate},
+        batch_size=${params.batchSize},
+        num_epochs=${params.numEpochs},
+        weight_decay=${params.weightDecay},
+        max_grad_norm=${params.maxGradNorm},
+        warmup_steps=${params.warmupSteps},
+        optimizer="${params.optimizer}",
+        loss_function="${params.lossFunction}"
+    )
+    model = sft_trainer.train()
+    print("SFT training completed.")`;
+}
+
+/**
+ * Generates code for PPO training stage
+ */
+function generatePPOTrainingStage(node: Node<PPOTrainingNodeData>): string {
+  const params = node.data.params;
+  
+  return `# 2. Proximal Policy Optimization (PPO)
+    print("\\nStep 2: Starting Proximal Policy Optimization (PPO)")
+    
+    # Sample prompts for PPO training
+    prompts = [
+        "Write a story about a robot learning to feel emotions.",
+        "Explain quantum computing to a 5-year-old.",
+        "Compose a poem about the changing seasons.",
+        # Add more prompts as needed
+    ]
+    
+    ppo_trainer = PPOTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        reward_model="${params.rewardModel}",
+        learning_rate=${params.learningRate},
+        batch_size=${params.batchSize},
+        num_epochs=${params.numEpochs},
+        clip_epsilon=${params.clipEpsilon},
+        value_coefficient=${params.valueCoefficient},
+        entropy_coefficient=${params.entropyCoefficient},
+        max_grad_norm=${params.maxGradNorm},
+        discount_factor=${params.discountFactor},
+        gae_lambda=${params.gaeLambda},
+        optimizer="${params.optimizer}"
+    )
+    model = ppo_trainer.train(prompts)
+    print("PPO training completed.")`;
+}
+
+/**
+ * Generates code for DPO training stage
+ */
+function generateDPOTrainingStage(node: Node<DPOTrainingNodeData>): string {
+  const params = node.data.params;
+  
+  return `# 3. Direct Preference Optimization (DPO)
+    print("\\nStep 3: Starting Direct Preference Optimization (DPO)")
+    
+    dpo_trainer = DPOTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        reference_model="${params.referenceModelName}",
+        dataset_path="${params.datasetPath}",
+        learning_rate=${params.learningRate},
+        batch_size=${params.batchSize},
+        num_epochs=${params.numEpochs},
+        beta=${params.beta},
+        max_grad_norm=${params.maxGradNorm},
+        weight_decay=${params.weightDecay},
+        optimizer="${params.optimizer}"
+    )
+    model = dpo_trainer.train()
+    print("DPO training completed.")`;
+}
+
+/**
+ * Generates code for GRPO training stage
+ */
+function generateGRPOTrainingStage(node: Node<GRPOTrainingNodeData>): string {
+  const params = node.data.params;
+  
+  return `# 4. Generalized Reward-Penalized Optimization (GRPO)
+    print("\\nStep 4: Starting Generalized Reward-Penalized Optimization (GRPO)")
+    
+    # Additional prompts for GRPO training
+    grpo_prompts = [
+        "Provide a balanced analysis of climate change policies.",
+        "Discuss the ethical implications of artificial intelligence.",
+        "Explain the pros and cons of remote work.",
+        # Add more prompts as needed
+    ]
+    
+    grpo_trainer = GRPOTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        reward_model="${params.rewardModel}",
+        learning_rate=${params.learningRate},
+        batch_size=${params.batchSize},
+        num_epochs=${params.numEpochs},
+        clip_epsilon=${params.clipEpsilon},
+        reward_threshold=${params.rewardThreshold},
+        max_grad_norm=${params.maxGradNorm},
+        weight_decay=${params.weightDecay},
+        optimizer="${params.optimizer}"
+    )
+    model = grpo_trainer.train(grpo_prompts)
+    print("GRPO training completed.")`;
 } 
