@@ -20,28 +20,28 @@ describe('NodePanel Component', () => {
     
     // Verify that the 'components' tab is active initially
     expect(screen.getByRole('tab', { name: /components/i })).toHaveAttribute('data-state', 'active');
-    expect(screen.getByRole('tab', { name: /templates/i })).toHaveAttribute('data-state', 'inactive');
+    expect(screen.getByRole('tab', { name: /post training/i })).toHaveAttribute('data-state', 'inactive');
     
     // Set up user event
     const user = userEvent.setup();
     
-    // Click on the 'templates' tab using userEvent
-    await user.click(screen.getByRole('tab', { name: /templates/i }));
+    // Click on the 'post training' tab using userEvent
+    await user.click(screen.getByRole('tab', { name: /post training/i }));
     
-    // Verify that setActiveTab was called with 'templates'
-    expect(setActiveTabMock).toHaveBeenCalledWith('templates');
+    // Verify that setActiveTab was called with 'postTraining'
+    expect(setActiveTabMock).toHaveBeenCalledWith('postTraining');
     
     // Simulate the parent component updating the activeTab prop
     rerender(
       <NodePanel 
         setNodes={setNodesMock} 
-        activeTab="templates" 
+        activeTab="postTraining" 
         setActiveTab={setActiveTabMock} 
       />
     );
     
-    // Verify that the 'templates' tab is now active
-    expect(screen.getByRole('tab', { name: /templates/i })).toHaveAttribute('data-state', 'active');
+    // Verify that the 'post training' tab is now active
+    expect(screen.getByRole('tab', { name: /post training/i })).toHaveAttribute('data-state', 'active');
     expect(screen.getByRole('tab', { name: /components/i })).toHaveAttribute('data-state', 'inactive');
   });
   
@@ -66,5 +66,68 @@ describe('NodePanel Component', () => {
     
     // Verify that setNodes was called
     expect(setNodesMock).toHaveBeenCalled();
+  });
+
+  it('displays training nodes in the Post Training tab', async () => {
+    // Mock the setNodes function
+    const setNodesMock = vi.fn();
+    
+    // Render with 'postTraining' tab active
+    render(
+      <NodePanel 
+        setNodes={setNodesMock} 
+        activeTab="postTraining" 
+        setActiveTab={vi.fn()} 
+      />
+    );
+    
+    // Verify that training nodes are displayed
+    expect(screen.getByText('SFT Training')).toBeInTheDocument();
+    expect(screen.getByText('PPO Training')).toBeInTheDocument();
+    expect(screen.getByText('DPO Training')).toBeInTheDocument();
+    expect(screen.getByText('GRPO Training')).toBeInTheDocument();
+  });
+
+  it('adds a training node to the canvas when clicked', async () => {
+    // Mock the setNodes function
+    const setNodesMock = vi.fn();
+    
+    // Render with 'postTraining' tab active
+    render(
+      <NodePanel 
+        setNodes={setNodesMock} 
+        activeTab="postTraining" 
+        setActiveTab={vi.fn()} 
+      />
+    );
+    
+    // Set up user event
+    const user = userEvent.setup();
+    
+    // Click on the SFT Training node
+    await user.click(screen.getByText('SFT Training'));
+    
+    // Verify that setNodes was called
+    expect(setNodesMock).toHaveBeenCalled();
+  });
+
+  it('allows dragging training nodes from the Post Training tab', () => {
+    // Mock the setNodes function
+    const setNodesMock = vi.fn();
+    
+    // Render with 'postTraining' tab active
+    render(
+      <NodePanel 
+        setNodes={setNodesMock} 
+        activeTab="postTraining" 
+        setActiveTab={vi.fn()} 
+      />
+    );
+    
+    // Get the SFT Training card
+    const sftCard = screen.getByText('SFT Training').closest('.cursor-grab');
+    
+    // Verify that the card is draggable
+    expect(sftCard).toHaveAttribute('draggable', 'true');
   });
 }); 

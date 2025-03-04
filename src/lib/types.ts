@@ -5,7 +5,11 @@ export type NodeType =
   | 'qkvAttention' 
   | 'ffn' 
   | 'output'
-  | 'layerNorm';
+  | 'layerNorm'
+  | 'sftTraining'
+  | 'ppoTraining'
+  | 'dpoTraining'
+  | 'grpoTraining';
 
 // Base node data interface
 export interface LLMNodeData {
@@ -84,5 +88,71 @@ export interface LayerNormNodeData extends LLMNodeData {
     eps?: number;
     elementwiseAffine?: boolean;
     bias?: boolean;
+  };
+}
+
+// SFT Training node data
+export interface SFTTrainingNodeData extends LLMNodeData {
+  type: 'sftTraining';
+  params: {
+    learningRate: number;
+    batchSize: number;
+    numEpochs: number;
+    weightDecay?: number;
+    maxGradNorm?: number;
+    warmupSteps?: number;
+    optimizer?: 'adam' | 'adamw' | 'sgd';
+    lossFunction?: 'crossentropy' | 'mse';
+    datasetPath?: string;
+  };
+}
+
+// PPO Training node data
+export interface PPOTrainingNodeData extends LLMNodeData {
+  type: 'ppoTraining';
+  params: {
+    learningRate: number;
+    batchSize: number;
+    numEpochs: number;
+    clipEpsilon: number;
+    valueCoefficient: number;
+    entropyCoefficient: number;
+    maxGradNorm?: number;
+    discountFactor?: number;
+    gaeLambda?: number;
+    optimizer?: 'adam' | 'adamw';
+    rewardModel?: string;
+  };
+}
+
+// DPO Training node data
+export interface DPOTrainingNodeData extends LLMNodeData {
+  type: 'dpoTraining';
+  params: {
+    learningRate: number;
+    batchSize: number;
+    numEpochs: number;
+    beta: number;
+    referenceModelName: string;
+    maxGradNorm?: number;
+    weightDecay?: number;
+    optimizer?: 'adam' | 'adamw';
+    datasetPath?: string;
+  };
+}
+
+// GRPO Training node data
+export interface GRPOTrainingNodeData extends LLMNodeData {
+  type: 'grpoTraining';
+  params: {
+    learningRate: number;
+    batchSize: number;
+    numEpochs: number;
+    clipEpsilon: number;
+    rewardThreshold: number;
+    maxGradNorm?: number;
+    weightDecay?: number;
+    optimizer?: 'adam' | 'adamw';
+    rewardModel?: string;
   };
 } 

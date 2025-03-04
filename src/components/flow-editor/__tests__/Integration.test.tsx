@@ -154,7 +154,10 @@ vi.mock('@/components/ui/slider', () => ({
       min={min}
       max={max}
       step={step}
-      onChange={(e) => onValueChange([Number(e.target.value)])}
+      onChange={(e) => {
+        console.log('Slider value changed to:', Number(e.target.value));
+        onValueChange([Number(e.target.value)]);
+      }}
     />
   )
 }));

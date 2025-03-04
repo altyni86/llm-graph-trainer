@@ -6,7 +6,11 @@ import {
   QKVAttentionNodeData,
   FFNNodeData,
   OutputNodeData,
-  LayerNormNodeData
+  LayerNormNodeData,
+  SFTTrainingNodeData,
+  PPOTrainingNodeData,
+  DPOTrainingNodeData,
+  GRPOTrainingNodeData
 } from './types';
 import { OptimizationSettings, defaultOptimizationSettings } from '@/components/optimization-panel/OptimizationPanel';
 
@@ -38,7 +42,7 @@ export function generatePythonCode(
         
     def forward(self, x):
 ${generateForwardPass(sortedNodes, edges, optimizationSettings)}
-        return x`;
+        return ${sortedNodes.length > 0 ? `x_${sortedNodes.length}` : 'x'}`;
 
   const trainingCode = optimizationSettings ? generateTrainingCode(optimizationSettings) : '';
   const experimentCode = optimizationSettings?.experiment?.enabled ? 
@@ -252,9 +256,24 @@ function generateComponentDefinition(
     case 'output':
       code = generateOutputCode(componentName, params as OutputNodeData['params']);
       break;
+    case 'sftTraining':
+      return generateSFTTrainingCode(node as Node<SFTTrainingNodeData>);
+    case 'ppoTraining':
+      return generatePPOTrainingCode(node as Node<PPOTrainingNodeData>);
+    case 'dpoTraining':
+      return generateDPOTrainingCode(node as Node<DPOTrainingNodeData>);
+    case 'grpoTraining':
+      return generateGRPOTrainingCode(node as Node<GRPOTrainingNodeData>);
+    default:
+      return `# Unknown node type: ${type}`;
   }
   
-  return `class ${node.id.charAt(0).toUpperCase() + node.id.slice(1)}(nn.Module):
+  // Capitalize the first letter of the node ID for the class name
+  const className = node.id.split('-').map(part => 
+    part.charAt(0).toUpperCase() + part.slice(1)
+  ).join('-');
+  
+  return `class ${className}(nn.Module):
     def __init__(self):
         super().__init__()
 ${code}
@@ -322,8 +341,8 @@ function generateForwardPass(
       }
     }
     
-    // Generate output variable name
-    const outputVar = index === sortedNodes.length - 1 ? 'x' : `x_${nodeId}`;
+    // Generate output variable name - use sequential numbers instead of node IDs
+    const outputVar = `x_${index + 1}`;
     outputVars[nodeId] = outputVar;
     
     // Generate the forward pass line
@@ -1408,4 +1427,408 @@ function generateLayerNormCode(
             elementwise_affine=${elementwiseAffine === false ? 'False' : 'True'},
             bias=${bias === false ? 'False' : 'True'}
         )`;
+}
+
+/**
+ * Generates code for SFT Training
+ */
+function generateSFTTrainingCode(node: Node<SFTTrainingNodeData>): string {
+  const { params } = node.data;
+  
+  return `
+class SupervisedFineTuning:
+    def __init__(self, model, tokenizer, dataset_path="${params.datasetPath || 'path/to/dataset'}"):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.dataset_path = dataset_path
+        
+        # Training parameters
+        self.learning_rate = ${params.learningRate}
+        self.batch_size = ${params.batchSize}
+        self.num_epochs = ${params.numEpochs}
+        self.weight_decay = ${params.weightDecay || 0.01}
+        self.max_grad_norm = ${params.maxGradNorm || 1.0}
+        self.warmup_steps = ${params.warmupSteps || 500}
+        
+    def load_dataset(self):
+        """
+        Load and prepare the dataset for supervised fine-tuning
+        """
+        from datasets import load_dataset
+        
+        # Load dataset (adjust as needed for your specific dataset)
+        dataset = load_dataset(self.dataset_path)
+        
+        # Tokenize the dataset
+        def tokenize_function(examples):
+            # Add prompt template if needed
+            inputs = self.tokenizer(examples["input"], padding="max_length", truncation=True)
+            outputs = self.tokenizer(examples["output"], padding="max_length", truncation=True)
+            
+            # Create labels for the decoder
+            inputs["labels"] = outputs["input_ids"]
+            return inputs
+            
+        tokenized_dataset = dataset.map(tokenize_function, batched=True)
+        return tokenized_dataset
+        
+    def train(self):
+        """
+        Run the supervised fine-tuning process
+        """
+        from transformers import Trainer, TrainingArguments
+        
+        # Load and prepare dataset
+        tokenized_dataset = self.load_dataset()
+        
+        # Define training arguments
+        training_args = TrainingArguments(
+            output_dir="./results",
+            num_train_epochs=self.num_epochs,
+            per_device_train_batch_size=self.batch_size,
+            per_device_eval_batch_size=self.batch_size,
+            warmup_steps=self.warmup_steps,
+            weight_decay=self.weight_decay,
+            logging_dir="./logs",
+            logging_steps=10,
+            evaluation_strategy="epoch",
+            save_strategy="epoch",
+            load_best_model_at_end=True,
+            learning_rate=self.learning_rate,
+            max_grad_norm=self.max_grad_norm,
+            ${params.optimizer ? `optim="${params.optimizer}",` : ''}
+        )
+        
+        # Initialize Trainer
+        trainer = Trainer(
+            model=self.model,
+            args=training_args,
+            train_dataset=tokenized_dataset["train"],
+            eval_dataset=tokenized_dataset["validation"],
+        )
+        
+        # Start training
+        trainer.train()
+        
+        # Save the model
+        self.model.save_pretrained("./sft_model")
+        self.tokenizer.save_pretrained("./sft_model")
+        
+        return self.model
+`;
+}
+
+/**
+ * Generates code for PPO Training
+ */
+function generatePPOTrainingCode(node: Node<PPOTrainingNodeData>): string {
+  const { params } = node.data;
+  
+  return `
+class PPOTrainer:
+    def __init__(self, model, tokenizer, reward_model=None):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.reward_model = reward_model or "${params.rewardModel || 'path/to/reward_model'}"
+        
+        # PPO parameters
+        self.learning_rate = ${params.learningRate}
+        self.batch_size = ${params.batchSize}
+        self.num_epochs = ${params.numEpochs}
+        self.clip_epsilon = ${params.clipEpsilon}
+        self.value_coefficient = ${params.valueCoefficient}
+        self.entropy_coefficient = ${params.entropyCoefficient}
+        self.max_grad_norm = ${params.maxGradNorm || 1.0}
+        self.discount_factor = ${params.discountFactor || 0.99}
+        self.gae_lambda = ${params.gaeLambda || 0.95}
+        
+    def load_reward_model(self):
+        """
+        Load the reward model for PPO training
+        """
+        from transformers import AutoModelForSequenceClassification
+        
+        # Load reward model
+        reward_model = AutoModelForSequenceClassification.from_pretrained(self.reward_model)
+        reward_model.eval()  # Set to evaluation mode
+        return reward_model
+        
+    def train(self, prompts):
+        """
+        Run the PPO training process
+        """
+        import torch
+        from trl import PPOTrainer, PPOConfig
+        
+        # Load reward model
+        reward_model = self.load_reward_model()
+        
+        # Define PPO configuration
+        ppo_config = PPOConfig(
+            learning_rate=self.learning_rate,
+            batch_size=self.batch_size,
+            ppo_epochs=self.num_epochs,
+            clip_range=self.clip_epsilon,
+            value_loss_coef=self.value_coefficient,
+            entropy_coef=self.entropy_coefficient,
+            max_grad_norm=self.max_grad_norm,
+            gamma=self.discount_factor,
+            lambda_=self.gae_lambda,
+            ${params.optimizer ? `optimizer_class=torch.optim.${params.optimizer.charAt(0).toUpperCase() + params.optimizer.slice(1)},` : ''}
+        )
+        
+        # Initialize PPO trainer
+        ppo_trainer = PPOTrainer(
+            config=ppo_config,
+            model=self.model,
+            tokenizer=self.tokenizer,
+        )
+        
+        # Define reward function
+        def reward_fn(generated_texts):
+            inputs = self.tokenizer(generated_texts, return_tensors="pt", padding=True, truncation=True)
+            with torch.no_grad():
+                rewards = reward_model(**inputs).logits[:, 0]
+            return rewards
+        
+        # Training loop
+        for epoch in range(self.num_epochs):
+            # Generate responses
+            query_tensors = [self.tokenizer.encode(prompt, return_tensors="pt") for prompt in prompts]
+            response_tensors = []
+            
+            for query in query_tensors:
+                response = ppo_trainer.generate(query)
+                response_tensors.append(response)
+            
+            # Decode responses
+            responses = [self.tokenizer.decode(r[0]) for r in response_tensors]
+            
+            # Calculate rewards
+            rewards = reward_fn(responses)
+            
+            # Update model with PPO
+            stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
+            
+            print(f"Epoch {epoch}: {stats}")
+        
+        # Save the model
+        self.model.save_pretrained("./ppo_model")
+        self.tokenizer.save_pretrained("./ppo_model")
+        
+        return self.model
+`;
+}
+
+/**
+ * Generates code for DPO Training
+ */
+function generateDPOTrainingCode(node: Node<DPOTrainingNodeData>): string {
+  const { params } = node.data;
+  
+  return `
+class DPOTrainer:
+    def __init__(self, model, tokenizer, reference_model="${params.referenceModelName}", dataset_path="${params.datasetPath || 'path/to/dataset'}"):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.reference_model_name = reference_model
+        self.dataset_path = dataset_path
+        
+        # DPO parameters
+        self.learning_rate = ${params.learningRate}
+        self.batch_size = ${params.batchSize}
+        self.num_epochs = ${params.numEpochs}
+        self.beta = ${params.beta}
+        self.max_grad_norm = ${params.maxGradNorm || 1.0}
+        self.weight_decay = ${params.weightDecay || 0.01}
+        
+    def load_dataset(self):
+        """
+        Load and prepare the dataset for DPO training
+        """
+        from datasets import load_dataset
+        
+        # Load dataset (adjust as needed for your specific dataset)
+        dataset = load_dataset(self.dataset_path)
+        
+        # Ensure dataset has the required columns: prompt, chosen, rejected
+        if not all(col in dataset["train"].column_names for col in ["prompt", "chosen", "rejected"]):
+            raise ValueError("Dataset must contain 'prompt', 'chosen', and 'rejected' columns")
+            
+        return dataset
+        
+    def train(self):
+        """
+        Run the DPO training process
+        """
+        from transformers import AutoModelForCausalLM
+        from trl import DPOTrainer as TRL_DPOTrainer
+        
+        # Load reference model
+        reference_model = AutoModelForCausalLM.from_pretrained(self.reference_model_name)
+        
+        # Load and prepare dataset
+        dataset = self.load_dataset()
+        
+        # Initialize DPO trainer
+        dpo_trainer = TRL_DPOTrainer(
+            model=self.model,
+            ref_model=reference_model,
+            tokenizer=self.tokenizer,
+            train_dataset=dataset["train"],
+            beta=self.beta,
+            learning_rate=self.learning_rate,
+            per_device_train_batch_size=self.batch_size,
+            num_train_epochs=self.num_epochs,
+            max_grad_norm=self.max_grad_norm,
+            weight_decay=self.weight_decay,
+            ${params.optimizer ? `optim="${params.optimizer}",` : ''}
+        )
+        
+        # Start training
+        dpo_trainer.train()
+        
+        # Save the model
+        self.model.save_pretrained("./dpo_model")
+        self.tokenizer.save_pretrained("./dpo_model")
+        
+        return self.model
+`;
+}
+
+/**
+ * Generates code for GRPO Training
+ */
+function generateGRPOTrainingCode(node: Node<GRPOTrainingNodeData>): string {
+  const { params } = node.data;
+  
+  return `
+class GRPOTrainer:
+    def __init__(self, model, tokenizer, reward_model=None):
+        self.model = model
+        self.tokenizer = tokenizer
+        self.reward_model = reward_model or "${params.rewardModel || 'path/to/reward_model'}"
+        
+        # GRPO parameters
+        self.learning_rate = ${params.learningRate}
+        self.batch_size = ${params.batchSize}
+        self.num_epochs = ${params.numEpochs}
+        self.clip_epsilon = ${params.clipEpsilon}
+        self.reward_threshold = ${params.rewardThreshold}
+        self.max_grad_norm = ${params.maxGradNorm || 1.0}
+        self.weight_decay = ${params.weightDecay || 0.01}
+        
+    def load_reward_model(self):
+        """
+        Load the reward model for GRPO training
+        """
+        from transformers import AutoModelForSequenceClassification
+        
+        # Load reward model
+        reward_model = AutoModelForSequenceClassification.from_pretrained(self.reward_model)
+        reward_model.eval()  # Set to evaluation mode
+        return reward_model
+        
+    def train(self, prompts):
+        """
+        Run the GRPO training process
+        """
+        import torch
+        import torch.nn.functional as F
+        from torch.optim import ${params.optimizer ? params.optimizer.charAt(0).toUpperCase() + params.optimizer.slice(1) : 'AdamW'}
+        
+        # Load reward model
+        reward_model = self.load_reward_model()
+        
+        # Setup optimizer
+        optimizer = ${params.optimizer ? params.optimizer.charAt(0).toUpperCase() + params.optimizer.slice(1) : 'AdamW'}(
+            self.model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay
+        )
+        
+        # Training loop
+        for epoch in range(self.num_epochs):
+            total_loss = 0
+            
+            # Process in batches
+            for i in range(0, len(prompts), self.batch_size):
+                batch_prompts = prompts[i:i+self.batch_size]
+                
+                # Tokenize prompts
+                inputs = self.tokenizer(batch_prompts, return_tensors="pt", padding=True, truncation=True)
+                
+                # Generate responses with the current model
+                with torch.no_grad():
+                    outputs = self.model.generate(
+                        inputs.input_ids,
+                        max_length=100,
+                        do_sample=True,
+                        output_scores=True,
+                        return_dict_in_generate=True
+                    )
+                
+                # Get generated sequences and their log probabilities
+                sequences = outputs.sequences
+                log_probs = self._compute_log_probs(outputs)
+                
+                # Compute rewards using the reward model
+                generated_texts = self.tokenizer.batch_decode(sequences, skip_special_tokens=True)
+                rewards = self._compute_rewards(generated_texts, reward_model)
+                
+                # Compute GRPO loss
+                loss = self._compute_grpo_loss(log_probs, rewards)
+                
+                # Backward pass and optimization
+                optimizer.zero_grad()
+                loss.backward()
+                
+                # Clip gradients
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                
+                optimizer.step()
+                
+                total_loss += loss.item()
+                
+            print(f"Epoch {epoch}: Loss = {total_loss}")
+        
+        # Save the model
+        self.model.save_pretrained("./grpo_model")
+        self.tokenizer.save_pretrained("./grpo_model")
+        
+        return self.model
+        
+    def _compute_log_probs(self, outputs):
+        """
+        Compute log probabilities of generated sequences
+        """
+        # This is a simplified implementation
+        # In practice, you would need to compute token-by-token log probs
+        return torch.mean(outputs.scores, dim=1)
+        
+    def _compute_rewards(self, texts, reward_model):
+        """
+        Compute rewards for generated texts using the reward model
+        """
+        inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True)
+        with torch.no_grad():
+            rewards = reward_model(**inputs).logits[:, 0]
+        return rewards
+        
+    def _compute_grpo_loss(self, log_probs, rewards):
+        """
+        Compute the GRPO loss
+        """
+        # Determine which samples exceed the reward threshold
+        above_threshold = rewards >= self.reward_threshold
+        
+        # For samples above threshold, maximize probability (minimize negative log prob)
+        # For samples below threshold, apply penalty proportional to how far below threshold
+        penalty = torch.clamp(self.reward_threshold - rewards, min=0)
+        
+        # Compute loss with clipping (similar to PPO)
+        loss = -log_probs * above_threshold + self.clip_epsilon * penalty * (~above_threshold)
+        
+        return loss.mean()
+`;
 } 

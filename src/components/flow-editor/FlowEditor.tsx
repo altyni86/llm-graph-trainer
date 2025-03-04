@@ -32,6 +32,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { SFTTrainingNode } from './nodes/training/SFTTrainingNode';
+import { PPOTrainingNode } from './nodes/training/PPOTrainingNode';
+import { DPOTrainingNode } from './nodes/training/DPOTrainingNode';
+import { GRPOTrainingNode } from './nodes/training/GRPOTrainingNode';
 
 // Register custom node types
 const nodeTypes = {
@@ -41,6 +45,10 @@ const nodeTypes = {
   ffn: FFNNode,
   output: OutputNode,
   layerNorm: LayerNormNode,
+  sftTraining: SFTTrainingNode,
+  ppoTraining: PPOTrainingNode,
+  dpoTraining: DPOTrainingNode,
+  grpoTraining: GRPOTrainingNode,
 };
 
 interface FlowEditorProps {

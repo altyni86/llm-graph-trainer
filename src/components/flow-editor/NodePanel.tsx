@@ -98,22 +98,97 @@ const nodeTemplates: NodeTemplate[] = [
   },
 ];
 
+// Define training node templates
+const trainingNodeTemplates: NodeTemplate[] = [
+  {
+    type: 'sftTraining',
+    label: 'SFT Training',
+    description: 'Supervised Fine-Tuning',
+    icon: '🧠',
+    defaultParams: {
+      learningRate: 5e-5,
+      batchSize: 16,
+      numEpochs: 3,
+      weightDecay: 0.01,
+      maxGradNorm: 1.0,
+      warmupSteps: 500,
+      optimizer: 'adamw',
+      lossFunction: 'crossentropy',
+      datasetPath: './data/sft_dataset.json',
+    },
+  },
+  {
+    type: 'ppoTraining',
+    label: 'PPO Training',
+    description: 'Proximal Policy Optimization',
+    icon: '🤖',
+    defaultParams: {
+      learningRate: 1e-5,
+      batchSize: 8,
+      numEpochs: 4,
+      clipEpsilon: 0.2,
+      valueCoefficient: 0.5,
+      entropyCoefficient: 0.01,
+      maxGradNorm: 1.0,
+      discountFactor: 0.99,
+      gaeLambda: 0.95,
+      optimizer: 'adamw',
+      rewardModel: 'reward_model.pt',
+    },
+  },
+  {
+    type: 'dpoTraining',
+    label: 'DPO Training',
+    description: 'Direct Preference Optimization',
+    icon: '📈',
+    defaultParams: {
+      learningRate: 2e-5,
+      batchSize: 16,
+      numEpochs: 3,
+      beta: 0.1,
+      referenceModelName: 'reference_model.pt',
+      maxGradNorm: 1.0,
+      weightDecay: 0.01,
+      optimizer: 'adamw',
+      datasetPath: './data/preference_dataset.json',
+    },
+  },
+  {
+    type: 'grpoTraining',
+    label: 'GRPO Training',
+    description: 'Generalized Reward-Penalized Optimization',
+    icon: '🎯',
+    defaultParams: {
+      learningRate: 3e-5,
+      batchSize: 8,
+      numEpochs: 3,
+      clipEpsilon: 0.2,
+      rewardThreshold: 0.5,
+      maxGradNorm: 1.0,
+      weightDecay: 0.01,
+      optimizer: 'adamw',
+      rewardModel: 'reward_model.pt',
+    },
+  },
+];
+
 export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps) {
   // Add a memoized state to maintain component persistence across renders
   const [componentsState] = useState<{
-    templates: { visible: boolean };
+    postTraining: { visible: boolean };
     components: { visible: boolean };
   }>({
-    templates: { visible: activeTab === 'templates' },
+    postTraining: { visible: activeTab === 'postTraining' },
     components: { visible: activeTab === 'components' },
   });
 
   // Store the node templates in a ref to prevent re-creation on each render
   const nodeTemplatesRef = useRef(nodeTemplates);
+  const trainingNodeTemplatesRef = useRef(trainingNodeTemplates);
 
   useEffect(() => {
     // Update visibility state when tab changes
-    componentsState.templates.visible = activeTab === 'templates';
+    componentsState.postTraining.visible = activeTab === 'postTraining';
     componentsState.components.visible = activeTab === 'components';
     
     // Save the current state to localStorage
@@ -136,7 +211,12 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
       const savedState = localStorage.getItem('llm-graph-component-state');
       if (savedState) {
         const parsedState = JSON.parse(savedState);
-        componentsState.templates.visible = parsedState.templates.visible;
+        if (parsedState.templates) {
+          // Handle migration from old state format
+          componentsState.postTraining.visible = parsedState.templates.visible;
+        } else if (parsedState.postTraining) {
+          componentsState.postTraining.visible = parsedState.postTraining.visible;
+        }
         componentsState.components.visible = parsedState.components.visible;
       }
     } catch (error) {
@@ -193,7 +273,7 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="components">Components</TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
+          <TabsTrigger value="postTraining">Post Training</TabsTrigger>
         </TabsList>
         
         <TabsContent 
@@ -228,41 +308,33 @@ export function NodePanel({ setNodes, activeTab, setActiveTab }: NodePanelProps)
         </TabsContent>
         
         <TabsContent 
-          value="templates" 
+          value="postTraining" 
           className="flex-1 overflow-y-auto"
           forceMount
-          style={{ display: activeTab === 'templates' ? 'block' : 'none' }}
+          style={{ display: activeTab === 'postTraining' ? 'block' : 'none' }}
         >
           <div className="space-y-3">
-            <Card className="p-3 cursor-grab bg-slate-700 hover:bg-slate-600 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="text-2xl">🧩</div>
-                <div>
-                  <h4 className="font-medium">Transformer Encoder</h4>
-                  <p className="text-xs text-slate-300">Standard transformer encoder block</p>
+            {trainingNodeTemplatesRef.current.map((template) => (
+              <Card 
+                key={template.type}
+                className="p-3 cursor-grab bg-slate-700 hover:bg-slate-600 transition-colors"
+                draggable
+                onDragStart={(event) => onDragStart(event, template.type, {
+                  label: template.label,
+                  type: template.type,
+                  params: { ...template.defaultParams },
+                })}
+                onClick={() => addNodeToCanvas(template)}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="text-2xl">{template.icon}</div>
+                  <div>
+                    <h4 className="font-medium">{template.label}</h4>
+                    <p className="text-xs text-slate-300">{template.description}</p>
+                  </div>
                 </div>
-              </div>
-            </Card>
-            
-            <Card className="p-3 cursor-grab bg-slate-700 hover:bg-slate-600 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="text-2xl">🧩</div>
-                <div>
-                  <h4 className="font-medium">Transformer Decoder</h4>
-                  <p className="text-xs text-slate-300">Standard transformer decoder block</p>
-                </div>
-              </div>
-            </Card>
-            
-            <Card className="p-3 cursor-grab bg-slate-700 hover:bg-slate-600 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="text-2xl">🧩</div>
-                <div>
-                  <h4 className="font-medium">GPT-style Block</h4>
-                  <p className="text-xs text-slate-300">Decoder-only transformer block</p>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            ))}
           </div>
         </TabsContent>
       </Tabs>
